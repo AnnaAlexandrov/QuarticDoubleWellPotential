@@ -35,7 +35,7 @@ Potential = Callable[[ArrayLike], ArrayLike]
 Problem = dict[str, object]
 Eigenstate = dict[str, object]
 
-
+#слишком умное предложение точки сшивки
 def suggest_match_index(
     x: FloatArray,
     potential_values: FloatArray,
@@ -67,7 +67,7 @@ def suggest_match_index(
     centre = 0.5 * (float(x_min) + float(x_max))
     return int(np.argmin(np.abs(x - centre)))
 
-
+#красивости (нам не надо)
 def prepare_problem(
     potential: Potential,
     grid: Grid,
