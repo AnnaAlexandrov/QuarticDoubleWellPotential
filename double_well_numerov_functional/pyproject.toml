@@ -1,0 +1,35 @@
+# Настройки сборки Python-пакета. Setuptools читает этот файл при `pip install`.
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+# Основные метаданные проекта и обязательные зависимости.
+[project]
+name = "double-well-numerov"
+version = "2.0.0"
+description = "Functional matched Numerov solver without user-defined classes"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "matplotlib>=3.7",
+]
+
+# Pytest не нужен обычному пользователю программы, поэтому вынесен в
+# необязательную группу: `pip install -e \".[test]\"`.
+[project.optional-dependencies]
+test = ["pytest>=7.4"]
+
+# После установки появляется консольная команда `double-well`.
+[project.scripts]
+double-well = "double_well_solver.cli:main"
+
+# Указываем setuptools искать только пакет double_well_solver и его подпакеты.
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["double_well_solver*"]
+
+# Pytest будет автоматически искать тесты в каталоге tests.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
