@@ -14,8 +14,6 @@
 только читаются.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
 
 import numpy as np
@@ -87,9 +85,6 @@ def prepare_problem(
     h = float(grid["step"])
     seed = float(seed)
 
-    if seed == 0.0 or not np.isfinite(seed):
-        raise ValueError("seed must be finite and non-zero")
-
     values = np.asarray(potential(x), dtype=float)
     if values.shape != x.shape:
         try:
@@ -99,8 +94,6 @@ def prepare_problem(
                 "Potential callable returned an incompatible shape"
             ) from exc
 
-    if not np.all(np.isfinite(values)):
-        raise ValueError("Potential must be finite on the whole grid")
 
     if match_x is None:
         match_index = suggest_match_index(
@@ -111,11 +104,6 @@ def prepare_problem(
         )
     else:
         match_index = int(np.argmin(np.abs(x - float(match_x))))
-
-    if not 4 <= match_index <= len(x) - 5:
-        raise ValueError(
-            "Matching point must be at least four grid cells from each edge"
-        )
 
     return {
         "potential": potential,
@@ -209,15 +197,6 @@ def bisect_root(
     fa = function(a)
     fb = function(b)
 
-    if not np.isfinite(fa) or not np.isfinite(fb):
-        raise ValueError("Non-finite mismatch at a bracketing endpoint")
-    if abs(fa) <= function_tolerance:
-        return float(a)
-    if abs(fb) <= function_tolerance:
-        return float(b)
-    if fa * fb > 0.0:
-        raise ValueError("Bisection interval does not bracket a root")
-
     left = float(a)
     right = float(b)
     f_left = float(fa)
@@ -225,11 +204,6 @@ def bisect_root(
     for _ in range(max_iterations):
         middle = 0.5 * (left + right)
         f_middle = function(middle)
-
-        if not np.isfinite(f_middle):
-            raise FloatingPointError(
-                "Mismatch became non-finite during bisection"
-            )
 
         if (
             abs(f_middle) <= function_tolerance
