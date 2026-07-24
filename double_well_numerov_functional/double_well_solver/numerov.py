@@ -18,7 +18,7 @@ from numpy.typing import NDArray
 FloatArray = NDArray[np.float64]
 Grid = dict[str, object]
 
-
+# Красивости, в нашем коде её не будет, определяем сетку on the go
 def make_uniform_grid(x_min: float, x_max: float, n_points: int) -> Grid:
     """Создать описание равномерной пространственной сетки.
 
@@ -50,7 +50,7 @@ def make_uniform_grid(x_min: float, x_max: float, n_points: int) -> Grid:
         "step": float(step),
     }
 
-
+#всё-таки не нужно
 def _rescale_prefix_if_needed(y: FloatArray, last: int) -> None:
     """Уменьшить уже построенную левую ветвь при угрозе переполнения.
 
@@ -64,7 +64,7 @@ def _rescale_prefix_if_needed(y: FloatArray, last: int) -> None:
     if local_scale > 1.0e100:
         y[: last + 1] /= local_scale
 
-
+#всё-таки не нужно
 def _rescale_suffix_if_needed(y: FloatArray, first: int) -> None:
     """Уменьшить уже построенную правую ветвь при угрозе переполнения."""
 
@@ -106,6 +106,7 @@ def integrate_from_left(
 
     for i in range(1, stop_index):
         denominator = 1.0 + h2_over_12 * k[i + 1]
+        #Та ловля ошибки, которую, возможно, добавим
         if abs(denominator) < 1.0e-14:
             raise FloatingPointError(
                 "Numerov denominator is nearly zero; reduce the grid step"
@@ -168,7 +169,7 @@ def integrate_from_right(
 
     return y
 
-
+#никакой правой и левой производной -- просто пользуемся формулой 5 от Фабиана
 def derivative_from_left(y: FloatArray, index: int, h: float) -> float:
     """Оценить производную в точке сшивки по пяти значениям слева.
 
