@@ -42,7 +42,7 @@ def make_uniform_grid(x_min: float, x_max: float, n_points: int) -> Grid:
     }
 
 
-def _rescale_prefix_if_needed(y: FloatArray, last: int) -> None:
+def _rescale_prefix_if_needed(psi: FloatArray, last: int) -> None:
     """Уменьшить уже построенную левую ветвь при угрозе переполнения.
 
     Эта функция технически изменяет переданный рабочий массив ``y`` на месте.
@@ -51,25 +51,23 @@ def _rescale_prefix_if_needed(y: FloatArray, last: int) -> None:
     Общий масштаб решения физически несущественен для линейного уравнения.
     """
 
-    local_scale = max(abs(y[last]), abs(y[last - 1]))
+    local_scale = max(abs(psi[last]), abs(psi[last - 1]))
     if local_scale > 1.0e100:
-        y[: last + 1] /= local_scale
+        psi[: last + 1] /= local_scale
 
 
-def _rescale_suffix_if_needed(y: FloatArray, first: int) -> None:
+def _rescale_suffix_if_needed(psi: FloatArray, first: int) -> None:
     """Уменьшить уже построенную правую ветвь при угрозе переполнения."""
 
-    local_scale = max(abs(y[first]), abs(y[first + 1]))
+    local_scale = max(abs(psi[first]), abs(psi[first + 1]))
     if local_scale > 1.0e100:
-        y[first:] /= local_scale
+        psi[first:] /= local_scale
 
 
 def integrate_from_left(
     k: FloatArray,
     h: float,
-    stop_index: int,
-    *,
-    seed: float = 1.0e-12,
+    i_match: int,
 ) -> FloatArray:
     """Построить решение от левой границы до точки сшивки и на один шаг за нее.
 
@@ -80,37 +78,31 @@ def integrate_from_left(
 
     n = len(k)
     h = float(h)
-    stop_index = int(stop_index)
-    seed = float(seed)
+    i_match = int(i_match)
 
-    if stop_index >= n - 1:
-        raise ValueError("stop_index is too close to the right edge")
-
-    y = np.zeros(n, dtype=float)
-    y[0] = 0.0
-    y[1] = seed
-    h2_over_12 = h * h / 12.0
+    psi = np.zeros(n, dtype=float)
+    psi[0] = 0
+    psi[1] = 1e-5
+    h2_over_12 = h**2 / 12
 
     # Обратите внимание: stop_index + 1 заставляет цикл сделать лишний шаг
-    for i in range(1, stop_index + 1):
-        denominator = 1.0 + h2_over_12 * k[i + 1]
+    for i in range(1, i_match + 1):
+        denominator = 1 + h2_over_12 * k[i + 1]
 
-        y[i + 1] = (
-            2.0 * (1.0 - 5.0 * h2_over_12 * k[i]) * y[i]
-            - (1.0 + h2_over_12 * k[i - 1]) * y[i - 1]
+        psi[i + 1] = (
+            2 * (1 - 5 * h2_over_12 * k[i]) * psi[i]
+            - (1 + h2_over_12 * k[i - 1]) * psi[i - 1]
         ) / denominator
 
-        _rescale_prefix_if_needed(y, i + 1)
+        _rescale_prefix_if_needed(psi, i + 1)
 
-    return y
+    return psi
 
 
 def integrate_from_right(
     k: FloatArray,
     h: float,
-    stop_index: int,
-    *,
-    seed: float = 1.0e-12,
+    i_match: int,
 ) -> FloatArray:
     """Построить решение от правой границы до точки сшивки и на один шаг за нее.
 
@@ -121,35 +113,31 @@ def integrate_from_right(
 
     n = len(k)
     h = float(h)
-    stop_index = int(stop_index)
-    seed = float(seed)
+    i_match = int(i_match)
 
-    if stop_index <= 0:
-        raise ValueError("stop_index is too close to the left edge")
-
-    y = np.zeros(n, dtype=float)
-    y[-1] = 0.0
-    y[-2] = seed
-    h2_over_12 = h * h / 12.0
+    psi = np.zeros(n, dtype=float)
+    psi[-1] = 0
+    psi[-2] = 1e-5
+    h2_over_12 = h**2 / 12
 
     # Обратите внимание: stop_index - 1 заставляет цикл сделать лишний шаг влево
-    for i in range(n - 2, stop_index - 1, -1):
-        denominator = 1.0 + h2_over_12 * k[i - 1]
+    for i in range(n - 2, i_match - 1, -1):
+        denominator = 1 + h2_over_12 * k[i - 1]
 
-        y[i - 1] = (
-            2.0 * (1.0 - 5.0 * h2_over_12 * k[i]) * y[i]
-            - (1.0 + h2_over_12 * k[i + 1]) * y[i + 1]
+        psi[i - 1] = (
+            2 * (1 - 5 * h2_over_12 * k[i]) * psi[i]
+            - (1 + h2_over_12 * k[i + 1]) * psi[i + 1]
         ) / denominator
 
-        _rescale_suffix_if_needed(y, i - 1)
+        _rescale_suffix_if_needed(psi, i - 1)
 
-    return y
+    return psi
 
 
-def derivative(
-    y: FloatArray,
+def derivative_for_mismatch_function(
+    psi: FloatArray,
     k: FloatArray,
-    index: int,
+    i_match: int,
     h: float
 ) -> float:
     """Оценить производную в точке сшивки по центральной разности с поправкой Нумерова.
@@ -158,20 +146,13 @@ def derivative(
     y' = (y_{n+1} - y_{n-1}) / (2h) + (h / 12) * (k_{n-1}y_{n-1} - k_{n+1}y_{n+1}).
     """
 
-    index = int(index)
+    i_match = int(i_match)
     h = float(h)
 
-    if index < 1 or index > len(y) - 2:
-        raise ValueError("index must be at least one point away from both edges")
-    if h <= 0.0:
-        raise ValueError("h must be positive")
-    if len(y) != len(k):
-        raise ValueError("arrays y and k must have the same length")
+    finite_diff = (psi[i_match + 1] - psi[i_match - 1]) / (2 * h)
 
-    finite_diff = (y[index + 1] - y[index - 1]) / (2.0 * h)
-
-    numerov_correction = (h / 12.0) * (
-        k[index - 1] * y[index - 1] - k[index + 1] * y[index + 1]
+    numerov_correction = (h / 12) * (
+        k[i_match - 1] * psi[i_match - 1] - k[i_match + 1] * psi[i_match + 1]
     )
 
     return float(finite_diff + numerov_correction)

@@ -19,10 +19,9 @@ from collections.abc import Callable
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from .numerov import (
+from .numerov_hue_2 import (
     Grid,
-    derivative_from_left,
-    derivative_from_right,
+    derivative_for_mismatch_function,
     integrate_from_left,
     integrate_from_right,
 )
@@ -71,7 +70,6 @@ def prepare_problem(
     grid: Grid,
     *,
     match_x: float | None = None,
-    seed: float = 1.0e-12,
 ) -> Problem:
     """Вычислить все данные, которые не зависят от пробной энергии.
 
@@ -83,7 +81,7 @@ def prepare_problem(
 
     x = np.asarray(grid["x"], dtype=float)
     h = float(grid["step"])
-    seed = float(seed)
+
 
     values = np.asarray(potential(x), dtype=float)
     if values.shape != x.shape:
@@ -111,7 +109,6 @@ def prepare_problem(
         "x": x,
         "h": h,
         "v": values,
-        "seed": seed,
         "match_index": match_index,
         "match_x": float(x[match_index]),
     }
@@ -130,12 +127,16 @@ def build_branches(
 
     После интегрирования возвращаются обе ветви и две односторонние производные
     в точке сшивки.
+
+    Функция берет одну пробную энергию E и дважды запускает алгоритм Нумерова из numerov.py.
+    Она интегрирует уравнение слева направо до точки сшивки (получая левую ветвь)
+    и справа налево до точки сшивки (получая правую ветвь).
+    Также она вычисляет производные обеих ветвей в этой точке.
     """
 
     v = np.asarray(problem["v"], dtype=float)
     h = float(problem["h"])
     match_index = int(problem["match_index"])
-    seed = float(problem["seed"])
 
     k = 2.0 * (float(energy) - v)
 
@@ -143,44 +144,55 @@ def build_branches(
         k,
         h,
         match_index,
-        seed=seed,
     )
     right = integrate_from_right(
         k,
         h,
         match_index,
-        seed=seed,
     )
 
-    d_left = derivative_from_left(left, match_index, h)
-    d_right = derivative_from_right(right, match_index, h)
+    d_left = derivative_for_mismatch_function(left, match_index, h)
+    d_right = derivative_for_mismatch_function(right, match_index, h)
     return left, right, d_left, d_right
 
 
 def mismatch(problem: Problem, energy: float) -> float:
-    """Вычислить нормированный вронскиан левой и правой ветвей.
+    """Вычислить невязку (mismatch) через скачок первой производной.
 
-    При собственной энергии две ветви являются частями одного решения, поэтому
-    их вронскиан равен нулю. Нормировка на локальные нормы ``(psi, psi')``
-    устраняет зависимость от произвольного масштаба seed и не создаёт
-    сингулярности в узле волновой функции.
+    Реализация выполнена по шагам 4 и 5 из задания:
+    1. Вычисляется коэффициент масштабирования lambda = psi_L(x_m) / psi_R(x_m).
+    2. Правая производная масштабируется: d_right_scaled = lambda * d_right.
+    3. Вычисляется Delta(E) = (psi_L'(x_m) - d_right_scaled) / psi_L(x_m).
     """
 
+    # Получаем левую и правую ветви волновой функции, а также их производные
     left, right, d_left, d_right = build_branches(problem, energy)
     match_index = int(problem["match_index"])
 
-    raw = (
-        d_left * right[match_index]
-        - d_right * left[match_index]
-    )
-    scale_left = np.hypot(left[match_index], d_left)
-    scale_right = np.hypot(right[match_index], d_right)
-    denominator = scale_left * scale_right
+    # Значения функций в точке сшивки
+    psi_l_m = left[match_index]
+    psi_r_m = right[match_index]
 
-    if denominator == 0.0 or not np.isfinite(denominator):
+    # Защита от деления на ноль.
+    # Если точка сшивки совпадет с узлом функции, мы не сможем вычислить
+    # масштабирующий фактор lambda или саму невязку Delta(E).
+    if psi_r_m == 0.0 or psi_l_m == 0.0:
         return float("nan")
 
-    return float(raw / denominator)
+    # Шаг 4: Вычисляем масштабный фактор lambda (scale_lambda)
+    scale_lambda = psi_l_m / psi_r_m
+
+    # Масштабируем производную правой ветви, чтобы обеспечить непрерывность
+    d_right_scaled = scale_lambda * d_right
+
+    # Шаг 5: Определяем энергетически зависимую функцию невязки Delta(E)
+    delta_e = (d_left - d_right_scaled) / psi_l_m
+
+    # Проверка на бесконечности (на всякий случай, если числа слишком большие)
+    if not np.isfinite(delta_e):
+        return float("nan")
+
+    return float(delta_e)
 
 
 def bisect_root(
